@@ -1,0 +1,65 @@
+# Stamp Print 邮票印花 · Skill
+
+> 一张照片 → 一张 3:4 复古套色剪纸海报。**纯代码绘制，不使用任何图像生成模型。**
+> 插画满铺画面，左上角贴一张 3:4 齿孔小邮票，邮票里是原照片（保持摄影质感）+ 半透明邮戳。
+
+给 AI / Agent：收到一张照片并被要求做「邮票印花 / 复古装饰插画海报 / 套色剪纸海报」时，按本文流程写一个场景脚本调用 `stamp_print/stamp.py`，渲染、自己看图自查、修改，再交付。
+
+---
+
+## 1. 画布
+- 3:4 竖版。设计坐标 **900×1200**，`S=2` 输出 **1800×2400**。
+- 插画满铺，细纸白内框线 `frame(34)`；主体可出血或冲出框。
+
+## 2. 邮票（必须有）
+- 左上角，宽约画宽 20%（`w=180`），**真实邮票比例 3:4 竖版**，齿孔白边，倾斜约 −3°，带平涂投影。
+- 邮票内是**原照片本身**，保持摄影质感，不做风格化。
+- 半透明圆形邮戳（文字 + 日期）+ 四条波浪线：`postmark=('MELON POST', '10·17')`。
+- 旁边一句手写批注 `top_text(...)`，可轻压邮票。
+
+## 3. 配色：从每张照片里取，不能固定死
+1. `palette_from_photo(path)` 先看照片主色（k-means，仅作参考；颜色脏时按眼挑）。
+2. 选出：**主色**（约 55% 面积，自动派生浅/深档）、**第二色**、**点睛色**（≤15%，照片里最跳的一小块颜色）、纸白。
+3. `set_palette(main, second, accent, extra={...})` 写入。**必须在 `Poster()` 之前调用**（套色错位按版初始化）。
+4. **照片里的标志色必须保留色相**：蓝天就是蓝、西瓜就是红、黄花就是黄，只压成哑光，不换色相。需要的话用 `extra={'red': rgb, 'red_lt': rgb}` 加一块独立色版（同前缀共用一版）。
+5. `violet* / moss* / apricot` 只是色槽名字（兼容旧脚本），**不代表颜色**。
+
+## 4. 画法
+- **全部哑光平涂**：无渐变、无立体光影、无粗黑描边、无厚颗粒。
+- **剪纸三层**：后 / 中 / 前。每块剪纸用 `cut()`，自带纯色平涂投影；边缘有剪刀小抖动（wobble）。
+- **套色错位**：每块色版固定 1–2px 随机偏移（`misreg`）。
+- **纹样只用六种**，与整块纯色交替，自动内缩不碰边：
+  `wave` 细波浪线 · `stripe` 直条 · `arc` 同心弧（毛流/木纹）· `grid` 小格 · `holes` 打孔圆点 · `dash` 成组短虚线。
+- 主体概括成圆润、不规则的平面形；眼睛、籽、高光等细节用小色块 + 细线 `line()`，不画写实。
+- 透明物（玻璃、塑料盒）：遮罩乘 0.3–0.4 的纸白 + 几条细线，只有透明物才这样做。
+- 背景：主色平涂 + 一组邮政波浪戳纹 `cancel_waves()`，放在空处；可加斜光斑。
+
+## 5. 字
+| 用途 | 字体 | 规格 |
+| --- | --- | --- |
+| 标题 | Abril Fatface（`TITLE`） | 英文大写，1–2 行，疏排 `spacing=.16`，放右上安静区；两行可用两种照片色 |
+| 短句 | Playfair Display SC（`SMALL`） | 17px，`spacing=.28`，三行错落 |
+| 批注 | Caveat（`HAND`）/ Long Cang（`HAND_ZH`） | 邮票旁一句手写 |
+
+## 6. 流程
+1. 看照片：挑 1 个主体 + 2–3 个配角，删杂物，定前中后层。
+2. 取色（第 3 节）。
+3. 复制 `examples/melon.py` 改：`set_palette → Poster → background → 后层 → 中层 → 前层主体 → frame → 字 → stamp → top_text → render`。
+4. 按照片内容写标题、三行短句、手写批注、邮戳文字（地点/日期）。
+5. **自查**：缩略图里标题能读、字不压主体、邮票没被挡、主体没有怪形、点睛色不超量、标志色色相没变。不行就改坐标再渲染。
+
+## 7. API 速查（`stamp_print/stamp.py`）
+```python
+P = Poster(900, 1200, S=2, seed=1, misreg=1.6)
+P.background('violet', waves=None)
+m = P.shape_mask(pts, smooth=True, amp=1.6)      # 也有 ellipse_mask / rect_mask
+P.cut(m, 'moss', shadow=(7, 9), shadow_alpha=.33) # 剪纸 + 投影
+P.add(m, 'paper')                                 # 不带投影的平涂
+P.texture(m, 'wave', 'paper', spacing=11, width=1.2, amp=1.6, angle=-20, wl=36, inset=8)
+P.line(pts, 'violet_dk', 1.8); P.dot(x, y, r, color)
+P.cancel_waves(n=5, length=200, at=(x, y)); P.frame(34, 'paper', 1.4)
+P.text('TITLE', (846, 70), 64, 'red', TITLE, spacing=.16, anchor='ra')
+P.stamp(photo, 70, 70, w=180, angle=-3, postmark=('CITY POST', '10·17'), focus=(.5, .5))
+P.top_text("a handwritten note ~", (268, 104), 28, 'violet_dk', HAND)
+P.render('out.jpg')
+```
